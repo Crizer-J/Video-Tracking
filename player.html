@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DJI Geo Track Viewer — Addition</title>
+  <title>GeoTrack — Player</title>
   <link
     href="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Widgets/widgets.css"
     rel="stylesheet"
@@ -23,14 +23,64 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
     }
 
-    /* ── Layout ────────────────────────────────── */
+    /* ── Layout ─────────────────────────────────────── */
     #app {
       display: flex;
+      flex-direction: column;
       width: 100vw;
       height: 100vh;
     }
 
-    /* ── Video Panel ───────────────────────────── */
+    /* ── Top bar ────────────────────────────────────── */
+    #top-bar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      height: 44px;
+      background: #111317;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex-shrink: 0;
+      z-index: 50;
+    }
+
+    #back-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #60697a;
+      text-decoration: none;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      transition: color 0.15s;
+    }
+
+    #back-btn:hover { color: #00aaff; }
+
+    #top-bar-divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255,255,255,0.1);
+    }
+
+    #project-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #e2e6f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Split panels ───────────────────────────────── */
+    #split {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Video Panel ────────────────────────────────── */
     #video-panel {
       flex: 0 0 auto;
       width: 50%;
@@ -82,7 +132,7 @@
       display: block;
     }
 
-    /* ── Divider ───────────────────────────────── */
+    /* ── Divider ────────────────────────────────────── */
     #divider {
       flex: 0 0 6px;
       background: #1a1a2e;
@@ -93,9 +143,7 @@
       user-select: none;
     }
 
-    #divider:hover, #divider.dragging {
-      background: #0af;
-    }
+    #divider:hover, #divider.dragging { background: #0af; }
 
     #divider-handle {
       position: absolute;
@@ -111,18 +159,12 @@
 
     #divider-handle i {
       display: block;
-      width: 3px;
-      height: 3px;
+      width: 3px; height: 3px;
       border-radius: 50%;
       background: rgba(255,255,255,0.35);
     }
 
-    #divider:hover .divider-handle i,
-    #divider.dragging #divider-handle i {
-      background: rgba(255,255,255,0.8);
-    }
-
-    /* ── Map Panel ─────────────────────────────── */
+    /* ── Map Panel ──────────────────────────────────── */
     #map-panel {
       flex: 1 1 auto;
       min-width: 15%;
@@ -130,19 +172,15 @@
       overflow: hidden;
     }
 
-    #cesiumContainer {
-      width: 100%;
-      height: 100%;
-    }
+    #cesiumContainer { width: 100%; height: 100%; }
 
-    /* ── HUD overlay ───────────────────────────── */
+    /* ── HUD overlay ────────────────────────────────── */
     #hud {
       position: absolute;
-      top: 12px;
-      left: 12px;
+      top: 12px; left: 12px;
       z-index: 100;
-      background: rgba(0, 0, 0, 0.72);
-      border: 1px solid rgba(0, 170, 255, 0.35);
+      background: rgba(0,0,0,0.72);
+      border: 1px solid rgba(0,170,255,0.35);
       border-radius: 8px;
       padding: 10px 14px;
       color: #cce;
@@ -164,25 +202,11 @@
       padding-bottom: 4px;
     }
 
-    #hud .row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-    }
+    #hud .row { display: flex; justify-content: space-between; gap: 12px; }
+    #hud .key { color: #0af; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    #hud .val { color: #eef; font-weight: 600; }
 
-    #hud .key {
-      color: #0af;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    #hud .val {
-      color: #eef;
-      font-weight: 600;
-    }
-
-    /* ── Status bar ────────────────────────────── */
+    /* ── Status bar ─────────────────────────────────── */
     #status-bar {
       position: absolute;
       bottom: 40px;
@@ -200,11 +224,10 @@
       display: none;
     }
 
-    /* ── Camera mode toggle ────────────────────── */
+    /* ── Camera / map toggle ────────────────────────── */
     #cam-toggle {
       position: absolute;
-      top: 12px;
-      right: 12px;
+      top: 12px; right: 12px;
       z-index: 100;
       display: flex;
       gap: 6px;
@@ -223,42 +246,29 @@
       letter-spacing: 0.5px;
     }
 
-    .cam-btn:hover {
-      background: rgba(0,170,255,0.15);
-      border-color: #0af;
-    }
-
-    .cam-btn.active {
-      background: rgba(0,170,255,0.25);
-      border-color: #0af;
-      color: #fff;
-    }
-
-    .cam-btn:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-    }
+    .cam-btn:hover { background: rgba(0,170,255,0.15); border-color: #0af; }
+    .cam-btn.active { background: rgba(0,170,255,0.25); border-color: #0af; color: #fff; }
+    .cam-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
     .btn-divider {
       width: 1px;
       background: rgba(0,170,255,0.3);
-      margin: 2px 2px;
+      margin: 2px;
       align-self: stretch;
     }
 
-    /* Hide Cesium default toolbar and credit bar; keep timeline visible */
+    /* Hide Cesium default toolbar; keep timeline */
     .cesium-viewer-toolbar       { display: none !important; }
     .cesium-viewer-bottom        { display: none !important; }
     .cesium-viewer-timelineContainer { display: block !important; }
 
-    /* Notification banner for missing GPS */
-    #gps-notice {
+    #no-gps-badge {
       position: absolute;
       bottom: 10px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 200;
-      background: rgba(255, 140, 0, 0.9);
+      background: rgba(255,140,0,0.9);
       color: #000;
       font-size: 11px;
       font-weight: 600;
@@ -266,38 +276,76 @@
       border-radius: 20px;
       pointer-events: none;
       white-space: nowrap;
+      display: none;
     }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: fixed; inset: 0;
+      background: #090909;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 16px;
+      color: #60697a;
+      font-size: 14px;
+    }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(0,170,255,0.2);
+      border-top-color: #00aaff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div id="app">
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <span>Loading project…</span>
+</div>
 
-    <!-- ── Left: Video ── -->
+<div id="app">
+
+  <!-- Top bar -->
+  <div id="top-bar">
+    <a id="back-btn" href="/">&#8592; Dashboard</a>
+    <div id="top-bar-divider"></div>
+    <div id="project-title">—</div>
+  </div>
+
+  <!-- Split view -->
+  <div id="split">
+
+    <!-- Left: Video -->
     <div id="video-panel">
       <div id="video-header">
         <span class="label">Video</span>
-        <span class="filename">Addition_fs.MP4 &nbsp;|&nbsp; 4K 29.97fps &nbsp;|&nbsp; 1:13</span>
+        <span class="filename" id="video-filename">—</span>
       </div>
       <div id="video-wrapper">
         <video id="track-video" controls preload="metadata">
-          <source src="Addition_fs.MP4" type="video/mp4" />
           Your browser does not support this video format.
         </video>
       </div>
     </div>
 
-    <!-- ── Drag Divider ── -->
+    <!-- Drag divider -->
     <div id="divider">
       <div id="divider-handle">
         <i></i><i></i><i></i><i></i><i></i>
       </div>
     </div>
 
-    <!-- ── Right: Cesium Map ── -->
+    <!-- Right: Cesium -->
     <div id="map-panel">
       <div id="cesiumContainer"></div>
 
-      <!-- HUD overlay -->
       <div id="hud">
         <div class="hud-title">Flight Telemetry</div>
         <div class="row"><span class="key">T+</span><span class="val" id="hud-time">0.0 s</span></div>
@@ -308,7 +356,6 @@
         <div class="row"><span class="key">Heading</span><span class="val" id="hud-heading">—</span></div>
       </div>
 
-      <!-- Camera mode + map mode buttons -->
       <div id="cam-toggle">
         <button class="cam-btn active" id="btn-follow"   onclick="setCamMode('follow')">Follow</button>
         <button class="cam-btn"        id="btn-overview" onclick="setCamMode('overview')">Overview</button>
@@ -318,51 +365,48 @@
         <button class="cam-btn active" id="btn-2dmap"    onclick="setMapMode('map')">Map</button>
       </div>
 
-      <!-- GPS notice (hidden — real GPS data loaded) -->
-      <div id="gps-notice" style="display:none;"></div>
-
-      <div id="status-bar">Syncing...</div>
+      <div id="no-gps-badge">No GPS data</div>
+      <div id="status-bar">Syncing…</div>
     </div>
 
   </div>
+</div>
 
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Cesium.js"></script>
-  <script src="app.js"></script>
-  <script>
-    (function () {
-      const divider   = document.getElementById("divider");
-      const videoPane = document.getElementById("video-panel");
-      const app       = document.getElementById("app");
-      let dragging    = false;
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.118/Build/Cesium/Cesium.js"></script>
+<script src="/player_app.js"></script>
+<script>
+  /* ── Resizable divider ──────────────────────────── */
+  (function () {
+    const divider   = document.getElementById("divider");
+    const videoPane = document.getElementById("video-panel");
+    const split     = document.getElementById("split");
+    let dragging    = false;
 
-      divider.addEventListener("mousedown", (e) => {
-        dragging = true;
-        divider.classList.add("dragging");
-        document.body.style.cursor    = "col-resize";
-        document.body.style.userSelect = "none";
-        e.preventDefault();
-      });
+    divider.addEventListener("mousedown", (e) => {
+      dragging = true;
+      divider.classList.add("dragging");
+      document.body.style.cursor     = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
 
-      document.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        const rect   = app.getBoundingClientRect();
-        const newW   = Math.max(rect.width * 0.15,
-                       Math.min(rect.width * 0.85,
-                       e.clientX - rect.left));
-        videoPane.style.width = newW + "px";
-        // Tell Cesium the container resized
-        window.dispatchEvent(new Event("resize"));
-      });
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const rect = split.getBoundingClientRect();
+      const newW = Math.max(rect.width * 0.15, Math.min(rect.width * 0.85, e.clientX - rect.left));
+      videoPane.style.width = newW + "px";
+      window.dispatchEvent(new Event("resize"));
+    });
 
-      document.addEventListener("mouseup", () => {
-        if (!dragging) return;
-        dragging = false;
-        divider.classList.remove("dragging");
-        document.body.style.cursor    = "";
-        document.body.style.userSelect = "";
-        window.dispatchEvent(new Event("resize"));
-      });
-    })();
-  </script>
+    document.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      divider.classList.remove("dragging");
+      document.body.style.cursor     = "";
+      document.body.style.userSelect = "";
+      window.dispatchEvent(new Event("resize"));
+    });
+  })();
+</script>
 </body>
 </html>

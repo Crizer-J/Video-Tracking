@@ -5,6 +5,17 @@
 *.mov
 *.avi
 *.mkv
+*.webm
+*.WebM
+
+# Uploaded project videos
+uploads/*
+!uploads/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
 
 # macOS
 .DS_Store

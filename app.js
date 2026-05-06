@@ -122,21 +122,78 @@ const viewer = new Cesium.Viewer("cesiumContainer", {
   fullscreenButton:       false,
 });
 
-// Hide the Cesium globe — Google Photorealistic 3D Tiles replace it entirely
-viewer.scene.globe.show = false;
 viewer.scene.skyAtmosphere.show = true;
 
-// Load Google Photorealistic 3D Tiles via Cesium Ion's built-in key
-(async () => {
-  try {
-    const tileset = await Cesium.createGooglePhotorealistic3DTileset();
-    viewer.scene.primitives.add(tileset);
-  } catch (err) {
-    console.warn("Google Photorealistic 3D Tiles failed, falling back to world terrain:", err);
-    viewer.scene.globe.show = true;
-    viewer.terrainProvider = await Cesium.createWorldTerrainAsync();
+// Keep globe visible initially as fallback; 3D tiles will hide it when ready
+viewer.scene.globe.show = true;
+
+// ── Map mode: Google 3D Tiles or Cesium World Terrain ──────────
+let _googleTileset  = null;
+let _mapMode        = "map";
+let _googleApiKey   = localStorage.getItem("googleMapsApiKey") || "";
+
+// Load world terrain into globe so the "Map" mode has 3D elevation too
+Cesium.createWorldTerrainAsync().then(tp => {
+  viewer.terrainProvider = tp;
+}).catch(() => {});
+
+async function _loadGoogleTiles(apiKey) {
+  // Remove any previous tileset
+  if (_googleTileset) {
+    viewer.scene.primitives.remove(_googleTileset);
+    _googleTileset = null;
   }
-})();
+  const opts = apiKey ? { key: apiKey } : {};
+  _googleTileset = await Cesium.createGooglePhotorealistic3DTileset(opts);
+  viewer.scene.primitives.add(_googleTileset);
+}
+
+async function setMapMode(mode) {
+  if (mode === "3d") {
+    // Prompt for key if we don't have one or previous attempt failed
+    if (!_googleApiKey) {
+      const key = window.prompt(
+        "Enter your Google Maps Platform API key\n" +
+        "(Map Tiles API must be enabled — console.cloud.google.com)\n\n" +
+        "Leave blank to retry with the shared Cesium key (may be rate-limited)."
+      );
+      if (key === null) return; // user cancelled
+      _googleApiKey = key.trim();
+      if (_googleApiKey) localStorage.setItem("googleMapsApiKey", _googleApiKey);
+    }
+    try {
+      await _loadGoogleTiles(_googleApiKey);
+      viewer.scene.globe.show = false;
+      _mapMode = "3d";
+      showStatus("Google 3D Tiles loaded ✓");
+    } catch (err) {
+      const code = err.statusCode || "";
+      if (code === 429) {
+        showStatus("Rate limited (429) — try your own API key");
+      } else {
+        showStatus(`3D Tiles error: ${code || err.message}`);
+      }
+      // Clear saved key so next click re-prompts
+      _googleApiKey = "";
+      localStorage.removeItem("googleMapsApiKey");
+      viewer.scene.globe.show = true;
+      _mapMode = "map";
+    }
+  } else {
+    // Map mode: hide Google tiles, show globe with world terrain
+    if (_googleTileset) {
+      viewer.scene.primitives.remove(_googleTileset);
+      _googleTileset = null;
+    }
+    viewer.scene.globe.show = true;
+    _mapMode = "map";
+  }
+
+  const btn3d  = document.getElementById("btn-3dtiles");
+  const btnMap = document.getElementById("btn-2dmap");
+  if (btn3d)  btn3d.classList.toggle("active",  _mapMode === "3d");
+  if (btnMap) btnMap.classList.toggle("active", _mapMode === "map");
+}
 
 /* ─────────────────────────────────────────────────────────────
    5.  CLOCK
@@ -386,18 +443,31 @@ function setCamMode(mode) {
 
   if (mode === "follow") {
     viewer.trackedEntity = trackEntity;
+    // Place camera in line with gimbal yaw at the current video time
+    const _yawDeg = ((interpYawDeg(videoElement.currentTime) % 360) + 360) % 360;
     viewer.trackedEntityOffset = new Cesium.HeadingPitchRange(
-      0,
+      Cesium.Math.toRadians(_yawDeg),
       Cesium.Math.toRadians(-35),
       500,
     );
   } else if (mode === "overview") {
     viewer.trackedEntity = undefined;
-    // Centre on the mid-point of the track
-    const mid = GPS_TRACK[Math.floor(GPS_TRACK.length / 2)];
+    // Centre above current entity position, facing current gimbal yaw
+    const pos  = positionProperty.getValue(clock.currentTime);
+    const dest = pos
+      ? Cesium.Cartesian3.fromElements(pos.x, pos.y, pos.z)  // fly above current position
+      : (() => { const m = GPS_TRACK[Math.floor(GPS_TRACK.length / 2)]; return Cesium.Cartesian3.fromDegrees(m.lon, m.lat, 2500); })();
+    const currentYawDeg = interpYawDeg(videoElement.currentTime);
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(mid.lon, mid.lat, 2500),
-      orientation: { heading: 0, pitch: Cesium.Math.toRadians(-60), roll: 0 },
+      destination: (() => {
+        const carto = Cesium.Cartographic.fromCartesian(dest);
+        return Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, 2500);
+      })(),
+      orientation: {
+        heading: Cesium.Math.toRadians(((currentYawDeg % 360) + 360) % 360),
+        pitch:   Cesium.Math.toRadians(-60),
+        roll:    0,
+      },
       duration: 1.5,
     });
   } else {
@@ -484,5 +554,82 @@ function showStatus(msg) {
     destination: Cesium.Cartesian3.fromDegrees(first.lon, first.lat, 1200),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 },
     duration: 0,
+  });
+})();
+
+/* ─────────────────────────────────────────────────────────────
+   15.  DRAG-TO-SCRUB — click and drag the entity circle to
+        seek the video/clock to the nearest GPS sample.
+
+   Key lessons:
+   - Cesium may reset canvas.style.cursor between MOUSE_MOVE and
+     mousedown, making cursor-string checks unreliable.  Use a JS
+     boolean flag (entityHovered) set by the hover handler instead.
+   - worldToWindowCoordinates returns undefined for samples behind
+     the camera, so use pickEllipsoid (geographic) for drag moves.
+   - Capture-phase + stopImmediatePropagation prevents Cesium's
+     camera controller from stealing the drag.
+───────────────────────────────────────────────────────────── */
+(function setupDragScrub() {
+  const canvas = viewer.scene.canvas;
+  let dragging      = false;
+  let entityHovered = false;   // set by proven-working hover handler
+
+  // ── Hover: track whether entity is under cursor ──
+  const hoverHandler = new Cesium.ScreenSpaceEventHandler(canvas);
+  hoverHandler.setInputAction((mv) => {
+    if (dragging) return;
+    const hit = viewer.scene.pick(mv.endPosition);
+    entityHovered = Cesium.defined(hit) && hit.id === trackEntity;
+    canvas.style.cursor = entityHovered ? "grab" : "";
+  }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+  // ── Drag start — CAPTURE phase, use JS flag not cursor string ──
+  canvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || !entityHovered) return;
+    dragging = true;
+    canvas.style.cursor = "grabbing";
+    viewer.scene.screenSpaceCameraController.enableInputs = false;
+    videoElement.pause();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, { capture: true });
+
+  // ── Drag move — geographic nearest sample via pickEllipsoid ──
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const pos2D = new Cesium.Cartesian2(
+      e.clientX - rect.left,
+      e.clientY - rect.top
+    );
+
+    // Project cursor ray onto the WGS84 ellipsoid (works without globe/tiles)
+    const cartesian = viewer.camera.pickEllipsoid(pos2D, Cesium.Ellipsoid.WGS84);
+    if (!Cesium.defined(cartesian)) return; // cursor over sky — keep current time
+
+    const carto  = Cesium.Cartographic.fromCartesian(cartesian);
+    const curLat = Cesium.Math.toDegrees(carto.latitude);
+    const curLon = Cesium.Math.toDegrees(carto.longitude);
+
+    // Find GPS sample closest to geographic cursor position
+    let minDist = Infinity, nearestT = videoElement.currentTime;
+    for (const s of GPS_TRACK) {
+      const d = (curLat - s.lat) ** 2 + (curLon - s.lon) ** 2;
+      if (d < minDist) { minDist = d; nearestT = s.t; }
+    }
+
+    if (Math.abs(nearestT - videoElement.currentTime) > 0.01) {
+      videoElement.currentTime = nearestT;
+    }
+  });
+
+  // ── Drag end ──
+  window.addEventListener("mouseup", (e) => {
+    if (!dragging || e.button !== 0) return;
+    dragging      = false;
+    entityHovered = false;
+    canvas.style.cursor = "";
+    viewer.scene.screenSpaceCameraController.enableInputs = true;
   });
 })();
